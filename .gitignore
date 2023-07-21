@@ -1,3 +1,4 @@
 marketplace/node_modules/*
 marketplace/yarn.lock
 marketplace/.next/*
+marketplace/.env
