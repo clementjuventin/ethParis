@@ -5,134 +5,67 @@ import (
 	"log"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/lmittmann/w3"
-	"github.com/lmittmann/w3/module/eth"
+	"github.com/metachris/eth-go-bindings/erc165"
 )
 
-func checkSupportInterface(client *w3.Client, address common.Address, interfaceId string) bool {
-
-	funcSupportsInterface := w3.MustNewFunc("supportsInterface(bytes4)", "bool")
-
-	var resp bool
-
-	value := [4]byte{}
-	copy(value[:], []byte(interfaceId))
-
-	err := client.Call(
-		//eth.CallFunc(funcSupportsInterface, address, w3.B(interfaceId)).Returns(&resp),
-		eth.CallFunc(funcSupportsInterface, address, value).Returns(&resp),
-	)
-
-	if err != nil {
-		log.Println("err w3 :", err)
-		return false
-	}
-	return resp
-}
-
-func checkOwner(client *w3.Client, address common.Address) common.Address {
-
-	funcSupportsInterface := w3.MustNewFunc("owner()", "address")
-	var owner common.Address
-
-	err := client.Call(
-		//eth.CallFunc(funcSupportsInterface, address, w3.B(interfaceId)).Returns(&resp),
-		eth.CallFunc(funcSupportsInterface, address).Returns(&owner),
-	)
-
-	if err != nil {
-		log.Println("err w3 :", err)
-		return common.Address{}
-	}
-	return owner
-}
-
 func main() {
-
-	endpoint := "wss://linea-mainnet.infura.io/ws/v3/ed46365c230a4510a18eed8799cf4f01"
-
+	endpoint := "wss://linea-mainnet.infura.io/ws/v3/11135f07f5c84261a8887926742776c6"
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	// w3client := w3.MustDial(endpoint)
 
-	client2 := w3.MustDial(endpoint)
-
-	log.Println("passed both conn")
-
-	resp := checkSupportInterface(client2, common.HexToAddress("0xa02573c4ad15c16b48f10842aac9c9ea405b65a3"), "0x80ac58cd")
-	log.Println("implements interface :", resp)
-
-	owner := checkOwner(client2, common.HexToAddress("0xa02573c4ad15c16b48f10842aac9c9ea405b65a3"))
-	log.Println("owner :", owner)
-
-	/*
-		newHeads := make(chan *types.Header)
-		sub, err := client.SubscribeNewHead(context.Background(), newHeads)
+	blockSync := big.NewInt(0)
+	// Syncing
+	for {
+		block, err := client.BlockByNumber(context.Background(), blockSync)
 		if err != nil {
 			log.Fatalln(err)
 		}
+		log.Println("block number :", block.Number())
+		transactions := block.Transactions()
 
-			for {
-				select {
-				case err := <-sub.Err():
-					log.Fatalln("connection ended : ", err)
-
-				case head := <-newHeads:
-					log.Println("==========")
-					log.Println("New header received :", head.Hash())
-
-					block, err := client.BlockByHash(context.Background(), head.Hash())
-					if err != nil {
-						log.Fatalln(err)
-					}
-					log.Println("////////")
-					log.Println("Transactions for block :")
-					for pos, tx := range block.Transactions() {
-						log.Println("tx pos / hash :", pos, "|", tx.Hash())
-						log.Println("to :", tx.To())
-						log.Println("data :", common.Bytes2Hex(tx.Data()))
-						if tx.To() == nil {
-							log.Println("CONTRACT DEPLOYEMENT")
-							resp := checkSupportInterface(client2, tx.To(), "0x80ac58cd")
-							log.Println("implements interface :", resp)
-						}
-					}
-				}
-
-
-			}
-	*/
-
-	latestBlock, err := client.BlockNumber(context.Background())
-
-	for i := 0; i < int(latestBlock); i++ {
-
-		block, err := client.BlockByNumber(context.Background(), big.NewInt(int64(i)))
-		if err != nil {
-			log.Fatalln(err)
-		}
-		for pos, tx := range block.Transactions() {
+		for _, tx := range transactions {
+			log.Println("----------------")
+			// if it's a deployment transaction, the to field will be nil
 			if tx.To() == nil {
-				log.Println("tx pos / hash :", pos, "|", tx.Hash())
-				log.Println("to :", tx.To())
-				log.Println("data :", common.Bytes2Hex(tx.Data()))
-				log.Println("CONTRACT DEPLOYEMENT")
 				signer := types.LatestSignerForChainID(tx.ChainId())
 				sender, err := signer.Sender(tx)
 				if err != nil {
 					log.Fatalln(err)
 				}
-				contractAddr := crypto.CreateAddress(sender, tx.Nonce())
-				log.Println("contract address : ", contractAddr)
-				log.Println("tx sender : ", sender)
-				resp := checkSupportInterface(client2, contractAddr, "0x80ac58cd")
-				log.Println("implements interface :", resp)
+				contractAddress := crypto.CreateAddress(sender, tx.Nonce())
+
+				contract, err := erc165.NewErc165(contractAddress, client)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				isERC721, err := contract.SupportsInterface(nil, [4]byte{0x80, 0xac, 0x58, 0xcd})
+				if err != nil {
+					// log.Fatalln(err)
+				}
+
+				if isERC721 {
+					log.Println("ERC721 contract found !")
+					log.Println("hash :", tx.Hash())
+					log.Println("sender :", sender.Hex())
+					log.Println("contract address :", contractAddress.Hex())
+				}
 			}
 		}
+
+		blockNumber, err := client.BlockNumber(context.Background())
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		if blockNumber == block.Number().Uint64() {
+			break
+		}
+		blockSync.Add(blockSync, big.NewInt(1))
 	}
 }
