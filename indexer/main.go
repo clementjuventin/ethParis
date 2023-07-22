@@ -96,6 +96,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	// w3client := w3.MustDial(endpoint)
 
 	blockSync := big.NewInt(4541)
 	blockSup := big.NewInt(4542)
@@ -116,6 +117,7 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
+		log.Println("block number :", block.Number())
 
 		if blockNumber == block.Number().Uint64() {
 			return
