@@ -14,58 +14,6 @@ import (
 	"github.com/metachris/eth-go-bindings/erc165"
 )
 
-/*
-var EVT_TRANSFER = crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
-var EVT_MINT = crypto.Keccak256Hash([]byte("Mint(address,uint256)"))
-var EVT_BURN = crypto.Keccak256Hash([]byte("Burn(address,uint256)"))
-
-	var EVENTS_SIG = []common.Hash{
-		EVT_TRANSFER,
-		EVT_MINT,
-		EVT_BURN,
-	}
-
-	func weiToEther(wei *big.Int) *big.Float {
-		ether := new(big.Float)
-		ether.SetString(wei.String())
-		ether = ether.Quo(ether, big.NewFloat(1000000000000000000))
-		return ether
-	}
-
-	func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Address, error) {
-		// Get tx receipt
-		receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
-		if err != nil {
-			return common.Address{}, err
-		}
-
-		for _, vLog := range receipt.Logs {
-			for _, topic := range vLog.Topics {
-
-				if topic == EVT_TRANSFER {
-					log.Println("Event found ! -> Transfer")
-					if vLog.Topics[1].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
-						log.Println("Mint @@@@@@@@@@")
-						log.Println("Token id :", vLog.Topics[3].Big().Uint64())
-						// Wei to ether
-						txValue := weiToEther(tx.Value())
-
-						log.Println("mint price :", txValue, "ETH")
-						log.Println("Tx :", tx.Hash().Hex())
-					}
-				}
-				if topic == EVT_MINT {
-					log.Println("Event found ! -> Mint")
-					log.Println("Tx :", tx.Hash().Hex())
-				}
-				if topic == EVT_BURN {
-					log.Println("Event found ! -> Burn")
-				}
-			}
-		}
-		return common.Address{}, nil
-	}
-*/
 type Data struct {
 	Collections      []common.Address
 	CollectionsMutex *sync.Mutex
