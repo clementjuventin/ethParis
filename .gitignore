@@ -1,7 +1,6 @@
-marketplace/node_modules/*
-marketplace/yarn.lock
-marketplace/.next/*
-marketplace/.env
+explorer/node_modules/*
+explorer/yarn.lock
+explorer/.env
 
 database/.env
 database/node_modules/*
