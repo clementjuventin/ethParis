@@ -2,20 +2,43 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"math/big"
+	"os"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/metachris/eth-go-bindings/erc165"
+	"github.com/metachris/eth-go-bindings/erc721"
 )
+
+const max_block uint64 = 200
+const start_block uint64 = 0
 
 type Data struct {
 	Collections      []common.Address
 	CollectionsMutex *sync.Mutex
+}
+
+type ERC721CollectionStruct struct {
+	Address common.Address
+	Name    string
+	Symbol  string
+}
+
+type ERC721TxStruct struct {
+	Hash       string
+	Tag        string
+	FromAddr   common.Address
+	ToAddr     common.Address
+	Value      big.Int
+	TokenId    int64
+	Collection common.Address
 }
 
 func weiToEther(wei *big.Int) float64 {
@@ -62,7 +85,7 @@ func detectERC721Deployment(tx *types.Transaction, client *ethclient.Client) (co
 // 	return tokenURI, nil
 // }
 
-func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Address, error) {
+func eventChecker(tx *types.Transaction, client *ethclient.Client, db *sql.DB) (common.Address, error) {
 	// Get tx receipt
 	receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
@@ -71,26 +94,24 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Addre
 
 	for _, vLog := range receipt.Logs {
 		for _, topic := range vLog.Topics {
-
 			if topic == EVT_TRANSFER {
-				log.Println("Event found ! -> Transfer")
-				// Mint
+				txTag := "transfer"
 				if vLog.Topics[1].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
-					log.Println("Mint @@@@@@@@@@")
-					log.Println("Token id :", vLog.Topics[3].Big().Uint64())
-					// Wei to ether
-					txValue := weiToEther(tx.Value())
-
-					log.Println("mint price :", txValue, "ETH")
-					log.Println("Tx :", tx.Hash().Hex())
+					txTag = "mint"
 				} else if vLog.Topics[0].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
-					log.Println("Burn @@@@@@@@@@")
-
-				} else { // Transfer
-					log.Println("Transfer @@@@@@@@@@")
-					log.Println("Tx :", tx.Hash().Hex())
-					log.Println("Value :", weiToEther(tx.Value()))
-					log.Println("Token id :", vLog.Topics[2].Big().Uint64())
+					txTag = "burn"
+				}
+				err := insertTx(db, ERC721TxStruct{
+					Hash:       tx.Hash().Hex(),
+					Tag:        txTag,
+					FromAddr:   common.HexToAddress("0x"),
+					ToAddr:     vLog.Address,
+					Value:      *tx.Value(),
+					TokenId:    int64(vLog.Topics[2].Big().Uint64()),
+					Collection: vLog.Address,
+				})
+				if err != nil {
+					return common.Address{}, err
 				}
 			}
 		}
@@ -98,7 +119,7 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Addre
 	return common.Address{}, nil
 }
 
-func blockAnalizer(block *types.Block, client *ethclient.Client, data *Data) {
+func blockAnalizer(block *types.Block, client *ethclient.Client, db *sql.DB) {
 	for _, tx := range block.Transactions() {
 		// if it's a deployment transaction, the to field will be nil
 		if tx.To() == nil {
@@ -107,71 +128,287 @@ func blockAnalizer(block *types.Block, client *ethclient.Client, data *Data) {
 				continue
 			}
 			if addr != (common.Address{}) {
-				data.CollectionsMutex.Lock()
-				data.Collections = append(data.Collections, addr)
-				data.CollectionsMutex.Unlock()
+				// Get the collection Name and Symbol from the contract
+				erc721, err := erc721.NewErc721(addr, client)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				name, err := erc721.Name(nil)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				symbol, err := erc721.Symbol(nil)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				// Insert a collection
+				inserCollection(db, ERC721CollectionStruct{
+					Address: addr,
+					Name:    name,
+					Symbol:  symbol,
+				})
 			}
 		}
+
+		eventChecker(tx, client, db)
 	}
 }
 
-func query(client *ethclient.Client, blockNb int, data *Data) {
+func query(client *ethclient.Client, blockNb uint64, db *sql.DB) {
 	block, err := client.BlockByNumber(context.Background(), big.NewInt(int64(blockNb)))
 	if err != nil {
 		log.Fatalln(err)
 	}
 	log.Println("got block :", block.Number())
-	blockAnalizer(block, client, data)
+	blockAnalizer(block, client, db)
 }
 
-func manager(client *ethclient.Client, blockHeight int) *Data {
-
-	data := new(Data)
-	data.CollectionsMutex = new(sync.Mutex)
-
-	var wg sync.WaitGroup
-	for j := 0; j < blockHeight; j++ {
-		wg.Add(1)
-		go func(j int) {
-			defer wg.Done()
-			query(client, j, data)
-		}(j)
-	}
-	wg.Wait()
-
-	return data
-}
-
-func main() {
+func startClient() (*ethclient.Client, error) {
 	endpoint := "wss://linea-mainnet.infura.io/ws/v3/531ec7a2e96642ceac54c241c236c580"
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
-		log.Fatalln(err)
+		return nil, err
 	}
-	contract, err := erc165.NewErc165(common.HexToAddress("0xb62c414abf83c0107db84f8de1c88631c05a8d7b"), client)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	isERC721, err := contract.SupportsInterface(nil, [4]byte{0x80, 0xac, 0x58, 0xcd})
-	if err != nil {
-		log.Fatalln(err)
-	}
-	log.Println("test punks :", isERC721)
+	return client, nil
+}
 
-	/*
-		height, err := client.BlockNumber(context.Background())
-		if err != nil {
-			log.Fatalln(err)
+func syncDatabase(client *ethclient.Client, db *sql.DB) {
+	// Current block
+	currentBlock, err := client.BlockNumber(context.Background())
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Println("Current block :", currentBlock)
+	syncedBlock, err := selectBlock(db)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var wg sync.WaitGroup
+	// Sync the database
+	for i := syncedBlock; i < currentBlock; i++ {
+		wg.Add(1)
+		go func(i uint64) {
+			defer wg.Done()
+			query(client, i, db)
+		}(i)
+
+		if i%500 == 0 {
+			wg.Wait()
+			log.Println("Synced up to block", i)
+			err := updateBlock(db, i)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			readDatabase(db)
 		}
-		log.Println("chain height :", height)
 
-		data := manager(client, int(height))
-	*/
-	height := 2000
-	data := manager(client, height)
-	log.Println("data up to ", height, "collections amount found :", len(data.Collections))
-	log.Println("displaying collecitons addresses :")
-	for _, collec := range data.Collections {
-		log.Println("|", collec)
+		if i == max_block-1 {
+			currentBlock, err = client.BlockNumber(context.Background())
+			if err != nil {
+				log.Fatalln(err)
+			}
+		}
+	}
+	wg.Wait()
+
+	log.Println("Synced")
+
+	// // Subscribe to new head
+	// headers := make(chan *types.Header)
+	// sub, err := client.SubscribeNewHead(context.Background(), headers)
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+	// defer sub.Unsubscribe()
+
+	// for {
+	// 	select {
+	// 	case err := <-sub.Err():
+	// 		log.Fatalln(err)
+	// 	case header := <-headers:
+	// 		log.Println("got header", header.Number)
+	// 	}
+	// }
+}
+
+func main() {
+	db, err := startDatabase()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer db.Close()
+
+	client, err := startClient()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	// Sync the database
+	syncDatabase(client, db)
+	readDatabase(db)
+}
+
+func selectBlock(db *sql.DB) (block uint64, err error) {
+	// Query the state
+	rows, err := db.Query("SELECT block FROM State")
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		err = rows.Scan(&block)
+		if err != nil {
+			return 0, err
+		}
+		return block, nil
+	}
+
+	// Insert a block
+	insertState := `INSERT INTO State(block) VALUES (?)`
+	_, err = db.Exec(insertState, start_block)
+	if err != nil {
+		return 0, err
+	}
+	return start_block, nil
+}
+
+func exec(db *sql.DB, query string, args ...any) (err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(args...)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func updateBlock(db *sql.DB, block uint64) (err error) {
+	update := `UPDATE State SET block = ?`
+	log.Println("Updating block to", block)
+	return exec(db, update, block)
+}
+
+func inserCollection(db *sql.DB, toInsert ERC721CollectionStruct) (err error) {
+	// Insert a collection
+	insertCollection := `INSERT INTO ERC721Collection(address, name, symbol) VALUES (?, ?, ?, ?)`
+	log.Println("Inserting collection :", toInsert.Address.Hex())
+	return exec(db, insertCollection, toInsert.Address.Hex(), toInsert.Name, toInsert.Symbol)
+}
+
+func insertTx(db *sql.DB, toInsert ERC721TxStruct) (err error) {
+	// Insert a tx
+	insertTx := `INSERT INTO ERC721Tx(hash, tag, fromAddr, toAddr, value, tokenId, collection) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	log.Println("Inserting tx :", toInsert.Hash)
+	return exec(db, insertTx, toInsert.Hash, toInsert.Tag, toInsert.FromAddr.Hex(), toInsert.ToAddr.Hex(), toInsert.Value, toInsert.TokenId, toInsert.Collection.Hex())
+}
+
+// Database
+func startDatabase() (database *sql.DB, e error) {
+	const file string = "dtb.db"
+
+	// Reset the database
+	err := os.Remove(file)
+	if err != nil {
+		return nil, err
+	}
+
+	db, err := sql.Open("sqlite3", file)
+	if err != nil {
+		return nil, err
+	}
+
+	const ERC721Collection string = `CREATE TABLE IF NOT EXISTS ERC721Collection (
+		address TEXT NOT NULL PRIMARY KEY,
+		name TEXT,
+		symbol TEXT
+	);`
+
+	const ERC721Tx string = `CREATE TABLE IF NOT EXISTS ERC721Tx (
+		hash TEXT NOT NULL PRIMARY KEY,
+		tag TEXT,
+		fromAddr TEXT,
+		toAddr TEXT,
+		value REAL,
+		tokenId INTEGER,
+		collection TEXT,
+		FOREIGN KEY(collection) REFERENCES ERC721Collection(address)
+	);`
+
+	const State string = `CREATE TABLE IF NOT EXISTS State (
+		block INTEGER NOT NULL PRIMARY KEY
+	);`
+
+	for _, create := range []string{ERC721Collection, ERC721Tx, State} {
+		_, err = db.Exec(create)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// If state already exists, return
+	block, err := selectBlock(db)
+	if err == nil {
+		log.Println("State already exists, block :", block)
+		return db, nil
+	}
+
+	insertState := `INSERT INTO State(block) VALUES (?)`
+	_, err = db.Exec(insertState, start_block)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
+func readDatabase(db *sql.DB) {
+	// Query all the collections
+	rows, err := db.Query("SELECT address FROM ERC721Collection")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	log.Println("Collections found :")
+	for rows.Next() {
+		var address string
+		err = rows.Scan(&address)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println("|", address)
+	}
+
+	// Query all the tx
+	rows, err = db.Query("SELECT hash FROM ERC721Tx")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	log.Println("Tx found :")
+	for rows.Next() {
+		var hash string
+		err = rows.Scan(&hash)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println("|", hash)
 	}
 }
