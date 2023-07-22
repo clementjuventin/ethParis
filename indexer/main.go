@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/big"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,6 +17,16 @@ type Data struct {
 	Collections      []common.Address
 	CollectionsMutex *sync.Mutex
 }
+
+func weiToEther(wei *big.Int) float64 {
+	weiFloat := new(big.Float)
+	weiFloat.SetString(wei.String())
+	etherFloat := new(big.Float).Quo(weiFloat, big.NewFloat(1000000000000000000))
+	ether, _ := etherFloat.Float64()
+	return ether
+}
+
+var EVT_TRANSFER = crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
 
 func detectERC721Deployment(tx *types.Transaction, client *ethclient.Client) (common.Address, error) {
 	signer := types.LatestSignerForChainID(tx.ChainId())
@@ -37,6 +46,56 @@ func detectERC721Deployment(tx *types.Transaction, client *ethclient.Client) (co
 		return contractAddress, nil
 	}
 	return common.Address{}, err
+}
+
+// func getERC721TokenURI(contractAddress common.Address, client *ethclient.Client, tokenId int64) (string, error) {
+// 	erc721, err := erc721.NewERC721(contractAddress, client)
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	log.Println("ERC721 contract found !", contractAddress.Hex())
+
+// 	tokenURI, err := erc721.TokenURI(nil, big.NewInt(tokenId))
+// 	if err != nil {
+// 		return "", err
+// 	}
+// 	return tokenURI, nil
+// }
+
+func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Address, error) {
+	// Get tx receipt
+	receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	for _, vLog := range receipt.Logs {
+		for _, topic := range vLog.Topics {
+
+			if topic == EVT_TRANSFER {
+				log.Println("Event found ! -> Transfer")
+				// Mint
+				if vLog.Topics[1].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
+					log.Println("Mint @@@@@@@@@@")
+					log.Println("Token id :", vLog.Topics[3].Big().Uint64())
+					// Wei to ether
+					txValue := weiToEther(tx.Value())
+
+					log.Println("mint price :", txValue, "ETH")
+					log.Println("Tx :", tx.Hash().Hex())
+				} else if vLog.Topics[0].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
+					log.Println("Burn @@@@@@@@@@")
+
+				} else { // Transfer
+					log.Println("Transfer @@@@@@@@@@")
+					log.Println("Tx :", tx.Hash().Hex())
+					log.Println("Value :", weiToEther(tx.Value()))
+					log.Println("Token id :", vLog.Topics[2].Big().Uint64())
+				}
+			}
+		}
+	}
+	return common.Address{}, nil
 }
 
 func blockAnalizer(block *types.Block, client *ethclient.Client, data *Data) {
@@ -70,13 +129,15 @@ func manager(client *ethclient.Client, blockHeight int) *Data {
 	data := new(Data)
 	data.CollectionsMutex = new(sync.Mutex)
 
-	for i := 0; i < blockHeight; i++ {
-		if (i+1)%75== 0 {
-			time.Sleep(time.Second * 1)
-			log.Println("batch completed at :", i)
-		}
-		go query(client, i, data)
+	var wg sync.WaitGroup
+	for j := 0; j < blockHeight; j++ {
+		wg.Add(1)
+		go func(j int) {
+			defer wg.Done()
+			query(client, j, data)
+		}(j)
 	}
+	wg.Wait()
 
 	return data
 }
