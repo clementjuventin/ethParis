@@ -13,14 +13,7 @@ import (
 )
 
 var EVT_TRANSFER = crypto.Keccak256Hash([]byte("Transfer(address,address,uint256)"))
-var EVT_MINT = crypto.Keccak256Hash([]byte("Mint(address,uint256)"))
-var EVT_BURN = crypto.Keccak256Hash([]byte("Burn(address,uint256)"))
 
-var EVENTS_SIG = []common.Hash{
-	EVT_TRANSFER,
-	EVT_MINT,
-	EVT_BURN,
-}
 var NIL_ADDR = common.HexToAddress("0x0")
 
 func weiToEther(wei *big.Int) *big.Float {
@@ -62,6 +55,7 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Addre
 
 			if topic == EVT_TRANSFER {
 				log.Println("Event found ! -> Transfer")
+				// Mint
 				if vLog.Topics[1].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
 					log.Println("Mint @@@@@@@@@@")
 					log.Println("Token id :", vLog.Topics[3].Big().Uint64())
@@ -70,14 +64,14 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Addre
 
 					log.Println("mint price :", txValue, "ETH")
 					log.Println("Tx :", tx.Hash().Hex())
+				} else if vLog.Topics[2].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
+					log.Println("Burn @@@@@@@@@@")
+
+				} else { // Transfer
+					log.Println("Transfer @@@@@@@@@@")
+					log.Println("To :", tx.To().Hex())
+					log.Println("Value :", weiToEther(tx.Value()))
 				}
-			}
-			if topic == EVT_MINT {
-				log.Println("Event found ! -> Mint")
-				log.Println("Tx :", tx.Hash().Hex())
-			}
-			if topic == EVT_BURN {
-				log.Println("Event found ! -> Burn")
 			}
 		}
 	}
@@ -108,7 +102,6 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// w3client := w3.MustDial(endpoint)
 
 	blockSync := big.NewInt(4541)
 	// Syncing
