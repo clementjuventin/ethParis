@@ -51,68 +51,83 @@ func eventChecker(tx *types.Transaction, block *types.Block, client *ethclient.C
 	}
 
 	for _, vLog := range receipt.Logs {
-		for _, topic := range vLog.Topics {
-			if topic == EVT_TRANSFER {
-				txTag := "transfer"
-				if vLog.Topics[1].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
-					txTag = "mint"
-				} else if vLog.Topics[0].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
-					txTag = "burn"
-				}
+		topic := vLog.Topics[0]
+		if topic == EVT_TRANSFER {
+			offset := 0
+			// Check if the len is two (=> it's not a transfer event)
+			if len(vLog.Topics) <= 3 {
+				continue
+			}
 
-				offset := 0
-				// Check if there is a fourth argument in the topic
-				if len(vLog.Topics) == 4 {
-					// Transfer from
-					offset = 1
-				}
+			// Check if there is a fourth argument in the topic
+			if len(vLog.Topics) == 5 {
+				offset = 1
+			}
 
-				tx := customTypes.ERC721TxStruct{
-					Timestamp:   block.Time(),
-					BlockNumber: block.Number().Uint64(),
-					TxHash:      tx.Hash().Hex(),
-					Tag:         txTag,
-					FromAddr:    common.HexToAddress(vLog.Topics[0+offset].Hex()[26:]),
-					ToAddr:      common.HexToAddress(vLog.Topics[1+offset].Hex()[26:]),
-					Value:       tx.Value().String(),
-					TokenId:     vLog.Topics[2+offset].Big().String(),
-					Collection:  common.HexToAddress(vLog.Address.Hex()),
-				}
-				err := database.InsertTx(db, tx)
+			txTag := "transfer"
+			if vLog.Topics[1+offset].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
+				txTag = "mint"
+			} else if vLog.Topics[2+offset].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
+				txTag = "burn"
+			}
 
-				if txTag == "transfer" {
-					database.UpdateOwner(db, tx)
-				}
-				if txTag == "mint" {
-					erc721, err := erc721.NewErc721(tx.Collection, client)
-					if err != nil {
-						log.Fatalln(err)
-					}
-					log.Println("TokenId :", tx.TokenId)
-					log.Println("TxHash :", tx.TxHash)
-					uri, err := erc721.TokenURI(nil, vLog.Topics[2].Big())
-					if err != nil {
-						uri = ""
-					}
-					log.Println(uri)
-					nft := customTypes.ERC721Struct{
-						MintTimestamp:   block.Time(),
-						MintBlockNumber: block.Number().Uint64(),
-						MintTxHash:      tx.TxHash,
-						URI:             uri,
-						TokenId:         tx.TokenId,
-						Collection:      tx.Collection,
-						Owner:           tx.ToAddr,
-					}
+			log.Println("For tx :", tx.Hash().Hex())
+			log.Println("Tag :", txTag)
+			log.Println("From :", common.HexToAddress(vLog.Topics[1+offset].Hex()[26:]).Hex())
+			log.Println("To :", common.HexToAddress(vLog.Topics[2+offset].Hex()[26:]).Hex())
+			log.Println("Value :", tx.Value().String())
+			log.Println("TokenId :", vLog.Topics[3+offset].Big().String())
+			log.Println("Collection :", vLog.Address.Hex())
 
-					database.InsertMint(db, nft)
-				}
+			log.Println("logs :", vLog.Topics)
+			log.Println("---------------------")
 
+			tokenId := vLog.Topics[3+offset].Big()
+
+			tx := customTypes.ERC721TxStruct{
+				Timestamp:   block.Time(),
+				BlockNumber: block.Number().Uint64(),
+				TxHash:      tx.Hash().Hex(),
+				Tag:         txTag,
+				FromAddr:    common.HexToAddress(vLog.Topics[1+offset].Hex()[26:]),
+				ToAddr:      common.HexToAddress(vLog.Topics[2+offset].Hex()[26:]),
+				Value:       tx.Value().String(),
+				TokenId:     tokenId.String(),
+				Collection:  common.HexToAddress(vLog.Address.Hex()),
+			}
+			err := database.InsertTx(db, tx)
+
+			if txTag == "transfer" {
+				database.UpdateOwner(db, tx)
+			}
+			if txTag == "mint" {
+				erc721, err := erc721.NewErc721(tx.Collection, client)
 				if err != nil {
-					return common.Address{}, err
+					log.Fatalln(err)
 				}
+				uri, err := erc721.TokenURI(nil, tokenId)
+				if err != nil {
+					uri = ""
+				}
+
+				nft := customTypes.ERC721Struct{
+					MintTimestamp:   block.Time(),
+					MintBlockNumber: block.Number().Uint64(),
+					MintTxHash:      tx.TxHash,
+					URI:             uri,
+					TokenId:         tx.TokenId,
+					Collection:      tx.Collection,
+					Owner:           tx.ToAddr,
+				}
+
+				database.InsertMint(db, nft)
+			}
+
+			if err != nil {
+				return common.Address{}, err
 			}
 		}
+
 	}
 	return common.Address{}, nil
 }
@@ -179,7 +194,6 @@ func syncDatabase(client *ethclient.Client, db *sql.DB) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("Current block :", currentBlock)
 	syncedBlock, err := database.SelectBlock(db)
 	if err != nil {
 		log.Fatalln(err)
@@ -226,6 +240,18 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	// tx 0x6e8f8ee72ef5d07c91d78876e916be3b017c6f28358dd0543336019f75f9024f
+	// for i := 450; i < 600; i++ {
+	// 	bi := big.NewInt(int64(i))
+	// 	block, _ := client.BlockByNumber(context.Background(), bi)
+	// 	blockAnalizer(block, client, db)
+	// }
+	// tx, _, _ := client.TransactionByHash(context.Background(), common.HexToHash("0xede8f5012c5115534103b9ed25cc1cdfaeb41e661a7a4813a4e6e721922b616d"))
+	// block, _ := client.BlockByNumber(context.Background(), big.NewInt(4228))
+	// eventChecker(tx, block, client, db)
+
+	// log.Fatal("Done")
 
 	// Sync the database
 	syncDatabase(client, db)

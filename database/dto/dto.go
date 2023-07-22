@@ -12,14 +12,14 @@ CREATE TABLE IF NOT EXISTS ERC721Collection (
 `
 const ERC721_TABLE string = `
 CREATE TABLE IF NOT EXISTS ERC721 (
-	id SERIAL PRIMARY KEY,
 	mint_timestamp text,
 	mint_block_number text,
 	mint_hash text,
 	uri text,
 	token_id text,
 	collection text,
-	owner text
+	owner text,
+	PRIMARY KEY (token_id, collection)
 );
 
 CREATE INDEX IF NOT EXISTS ERC721_collection_idx ON ERC721(collection);
