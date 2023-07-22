@@ -227,15 +227,28 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	// Get the tx 0x2768553f9605145b5d43da0f1773146b93761a2e7c0368e1ea9517bb3ff85530
-	// tx, _, _ := client.TransactionByHash(context.Background(), common.HexToHash("0x2768553f9605145b5d43da0f1773146b93761a2e7c0368e1ea9517bb3ff85530"))
-
-	// addr, err := detectERC721Deployment(tx, client)
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
-	// log.Println(addr.Hex())
-
 	// Sync the database
 	syncDatabase(client, db)
+
+	// Listen for new blocks
+	headers := make(chan *types.Header)
+	sub, err := client.SubscribeNewHead(context.Background(), headers)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	for {
+		select {
+		case err := <-sub.Err():
+			log.Fatalln(err)
+		case header := <-headers:
+			go func() {
+				block, err := client.BlockByHash(context.Background(), header.Hash())
+				if err != nil {
+					log.Fatalln(err)
+				}
+				blockAnalizer(block, client, db)
+			}()
+		}
+	}
 }
