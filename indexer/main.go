@@ -36,10 +36,12 @@ type ERC721TxStruct struct {
 	Tag        string
 	FromAddr   common.Address
 	ToAddr     common.Address
-	Value      big.Int
-	TokenId    int64
+	Value      string
+	TokenId    string
 	Collection common.Address
 }
+
+var insertionMutex = &sync.Mutex{}
 
 func weiToEther(wei *big.Int) float64 {
 	weiFloat := new(big.Float)
@@ -106,8 +108,8 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client, db *sql.DB) (
 					Tag:        txTag,
 					FromAddr:   common.HexToAddress("0x"),
 					ToAddr:     vLog.Address,
-					Value:      *tx.Value(),
-					TokenId:    int64(vLog.Topics[2].Big().Uint64()),
+					Value:      tx.Value().String(),
+					TokenId:    vLog.Topics[2].Big().String(),
 					Collection: vLog.Address,
 				})
 				if err != nil {
@@ -149,9 +151,9 @@ func blockAnalizer(block *types.Block, client *ethclient.Client, db *sql.DB) {
 				})
 			}
 		}
-
 		eventChecker(tx, client, db)
 	}
+	log.Println("Block", block.Number().Uint64(), "done")
 }
 
 func query(client *ethclient.Client, blockNb uint64, db *sql.DB) {
@@ -159,7 +161,6 @@ func query(client *ethclient.Client, blockNb uint64, db *sql.DB) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("got block :", block.Number())
 	blockAnalizer(block, client, db)
 }
 
@@ -193,7 +194,7 @@ func syncDatabase(client *ethclient.Client, db *sql.DB) {
 			query(client, i, db)
 		}(i)
 
-		if i%500 == 0 {
+		if i%25 == 0 {
 			wg.Wait()
 			log.Println("Synced up to block", i)
 			err := updateBlock(db, i)
@@ -306,7 +307,7 @@ func updateBlock(db *sql.DB, block uint64) (err error) {
 
 func inserCollection(db *sql.DB, toInsert ERC721CollectionStruct) (err error) {
 	// Insert a collection
-	insertCollection := `INSERT INTO ERC721Collection(address, name, symbol) VALUES (?, ?, ?, ?)`
+	insertCollection := `INSERT INTO ERC721Collection(address, name, symbol) VALUES (?, ?, ?)`
 	log.Println("Inserting collection :", toInsert.Address.Hex())
 	return exec(db, insertCollection, toInsert.Address.Hex(), toInsert.Name, toInsert.Symbol)
 }
@@ -315,7 +316,14 @@ func insertTx(db *sql.DB, toInsert ERC721TxStruct) (err error) {
 	// Insert a tx
 	insertTx := `INSERT INTO ERC721Tx(hash, tag, fromAddr, toAddr, value, tokenId, collection) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	log.Println("Inserting tx :", toInsert.Hash)
-	return exec(db, insertTx, toInsert.Hash, toInsert.Tag, toInsert.FromAddr.Hex(), toInsert.ToAddr.Hex(), toInsert.Value, toInsert.TokenId, toInsert.Collection.Hex())
+
+	log.Println("Command :", insertTx)
+	log.Println("Args :", toInsert.Hash, toInsert.Tag, toInsert.FromAddr.Hex(), toInsert.ToAddr.Hex(), toInsert.Value, toInsert.TokenId, toInsert.Collection.Hex())
+
+	insertionMutex.Lock()
+	err = exec(db, insertTx, toInsert.Hash, toInsert.Tag, toInsert.FromAddr.Hex(), toInsert.ToAddr.Hex(), toInsert.Value, toInsert.TokenId, toInsert.Collection.Hex())
+	insertionMutex.Unlock()
+	return err
 }
 
 // Database
@@ -344,8 +352,8 @@ func startDatabase() (database *sql.DB, e error) {
 		tag TEXT,
 		fromAddr TEXT,
 		toAddr TEXT,
-		value REAL,
-		tokenId INTEGER,
+		value TEXT,
+		tokenId TEXT,
 		collection TEXT,
 		FOREIGN KEY(collection) REFERENCES ERC721Collection(address)
 	);`
