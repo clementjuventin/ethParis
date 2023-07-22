@@ -23,6 +23,13 @@ var EVENTS_SIG = []common.Hash{
 }
 var NIL_ADDR = common.HexToAddress("0x0")
 
+func weiToEther(wei *big.Int) *big.Float {
+	ether := new(big.Float)
+	ether.SetString(wei.String())
+	ether = ether.Quo(ether, big.NewFloat(1000000000000000000))
+	return ether
+}
+
 func detectERC721Deployment(tx *types.Transaction, client *ethclient.Client) (common.Address, error) {
 	signer := types.LatestSignerForChainID(tx.ChainId())
 	sender, err := signer.Sender(tx)
@@ -56,8 +63,13 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client) (common.Addre
 			if topic == EVT_TRANSFER {
 				log.Println("Event found ! -> Transfer")
 				if vLog.Topics[1].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
-					log.Println("Mint")
+					log.Println("Mint @@@@@@@@@@")
 					log.Println("Token id :", vLog.Topics[3].Big().Uint64())
+					// Wei to ether
+					txValue := weiToEther(tx.Value())
+
+					log.Println("mint price :", txValue, "ETH")
+					log.Println("Tx :", tx.Hash().Hex())
 				}
 			}
 			if topic == EVT_MINT {
