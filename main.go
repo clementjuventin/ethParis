@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"sync"
 
+	"workspace/config"
 	"workspace/customTypes"
 
 	"workspace/database"
@@ -42,7 +43,7 @@ func detectERC721Deployment(tx *types.Transaction, client *ethclient.Client) (co
 	return common.Address{}, err
 }
 
-func eventChecker(tx *types.Transaction, client *ethclient.Client, db *sql.DB) (common.Address, error) {
+func eventChecker(tx *types.Transaction, block *types.Block, client *ethclient.Client, db *sql.DB) (common.Address, error) {
 	// Get tx receipt
 	receipt, err := client.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
@@ -58,15 +59,55 @@ func eventChecker(tx *types.Transaction, client *ethclient.Client, db *sql.DB) (
 				} else if vLog.Topics[0].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
 					txTag = "burn"
 				}
-				err := database.InsertTx(db, customTypes.ERC721TxStruct{
-					Hash:       tx.Hash().Hex(),
-					Tag:        txTag,
-					FromAddr:   common.HexToAddress("0x"),
-					ToAddr:     vLog.Address,
-					Value:      tx.Value().String(),
-					TokenId:    vLog.Topics[2].Big().String(),
-					Collection: vLog.Address,
-				})
+
+				offset := 0
+				// Check if there is a fourth argument in the topic
+				if len(vLog.Topics) == 4 {
+					// Transfer from
+					offset = 1
+				}
+
+				tx := customTypes.ERC721TxStruct{
+					Timestamp:   block.Time(),
+					BlockNumber: block.Number().Uint64(),
+					TxHash:      tx.Hash().Hex(),
+					Tag:         txTag,
+					FromAddr:    common.HexToAddress(vLog.Topics[0+offset].Hex()[26:]),
+					ToAddr:      common.HexToAddress(vLog.Topics[1+offset].Hex()[26:]),
+					Value:       tx.Value().String(),
+					TokenId:     vLog.Topics[2+offset].Big().String(),
+					Collection:  common.HexToAddress(vLog.Address.Hex()),
+				}
+				err := database.InsertTx(db, tx)
+
+				if txTag == "transfer" {
+					database.UpdateOwner(db, tx)
+				}
+				if txTag == "mint" {
+					erc721, err := erc721.NewErc721(tx.Collection, client)
+					if err != nil {
+						log.Fatalln(err)
+					}
+					log.Println("TokenId :", tx.TokenId)
+					log.Println("TxHash :", tx.TxHash)
+					uri, err := erc721.TokenURI(nil, vLog.Topics[2].Big())
+					if err != nil {
+						uri = ""
+					}
+					log.Println(uri)
+					nft := customTypes.ERC721Struct{
+						MintTimestamp:   block.Time(),
+						MintBlockNumber: block.Number().Uint64(),
+						MintTxHash:      tx.TxHash,
+						URI:             uri,
+						TokenId:         tx.TokenId,
+						Collection:      tx.Collection,
+						Owner:           tx.ToAddr,
+					}
+
+					database.InsertMint(db, nft)
+				}
+
 				if err != nil {
 					return common.Address{}, err
 				}
@@ -98,15 +139,19 @@ func blockAnalizer(block *types.Block, client *ethclient.Client, db *sql.DB) {
 				if err != nil {
 					log.Fatalln(err)
 				}
+
 				// Insert a collection
 				database.InserCollection(db, customTypes.ERC721CollectionStruct{
-					Address: addr,
-					Name:    name,
-					Symbol:  symbol,
+					ContractAddress:   addr,
+					ContractName:      name,
+					ContractSymbol:    symbol,
+					DeployTimestamp:   block.Time(),
+					DeployBlockNumber: block.Number().Uint64(),
+					DeployTxHash:      tx.Hash().Hex(),
 				})
 			}
 		}
-		eventChecker(tx, client, db)
+		eventChecker(tx, block, client, db)
 	}
 	log.Println("Block", block.Number().Uint64(), "done")
 }
@@ -120,7 +165,7 @@ func query(client *ethclient.Client, blockNb uint64, db *sql.DB) {
 }
 
 func startClient() (*ethclient.Client, error) {
-	endpoint := "wss://linea-mainnet.infura.io/ws/v3/d34b021a1e8e4219a919faa2265b62e3"
+	endpoint := config.INFURA_KEY
 	client, err := ethclient.Dial(endpoint)
 	if err != nil {
 		return nil, err
@@ -149,7 +194,7 @@ func syncDatabase(client *ethclient.Client, db *sql.DB) {
 			query(client, i, db)
 		}(i)
 
-		if i%1000 == 0 {
+		if i%100 == 0 {
 			wg.Wait()
 			log.Println("Synced up to block", i)
 			err := database.UpdateBlock(db, i)
@@ -181,6 +226,15 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	// Get the tx 0x2768553f9605145b5d43da0f1773146b93761a2e7c0368e1ea9517bb3ff85530
+	// tx, _, _ := client.TransactionByHash(context.Background(), common.HexToHash("0x2768553f9605145b5d43da0f1773146b93761a2e7c0368e1ea9517bb3ff85530"))
+
+	// addr, err := detectERC721Deployment(tx, client)
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+	// log.Println(addr.Hex())
 
 	// Sync the database
 	syncDatabase(client, db)
