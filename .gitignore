@@ -2,3 +2,7 @@ marketplace/node_modules/*
 marketplace/yarn.lock
 marketplace/.next/*
 marketplace/.env
+
+database/.env
+database/node_modules/*
+database/yarn.lock

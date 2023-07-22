@@ -99,7 +99,6 @@ func main() {
 	// w3client := w3.MustDial(endpoint)
 
 	blockSync := big.NewInt(4541)
-	blockSup := big.NewInt(4542)
 	// Syncing
 	for {
 		block, err := client.BlockByNumber(context.Background(), blockSync)
@@ -108,10 +107,6 @@ func main() {
 		}
 		log.Println("block number :", block.Number())
 		blockAnalizer(block, client)
-
-		if blockSup == block.Number() {
-			return
-		}
 
 		blockNumber, err := client.BlockNumber(context.Background())
 		if err != nil {
