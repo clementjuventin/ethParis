@@ -16,7 +16,7 @@ func InserCollection(db *sql.DB, toInsert customTypes.ERC721CollectionStruct) (e
 	// Insert a collection
 	insertCollection := `INSERT INTO ERC721Collection(deploy_timestamp, block_number, deploy_hash, contract_address, contract_name, contract_symbol) VALUES ($1, $2, $3, $4, $5, $6)`
 	err = exec(db, insertCollection, toInsert.DeployTimestamp, toInsert.DeployBlockNumber, toInsert.DeployTxHash, strings.ToLower(toInsert.ContractAddress.Hex()), toInsert.ContractName, toInsert.ContractSymbol)
-	if err != nil {
+	if err != nil && !config.IGNORE_ERR {
 		log.Println("Error :", err)
 	}
 	return err
@@ -60,7 +60,7 @@ func InsertTx(db *sql.DB, toInsert customTypes.ERC721TxStruct) (err error) {
 	// Insert a tx
 	insertTx := `INSERT INTO ERC721Tx(timestamp, block_number, hash, tag, from_addr, to_addr, value, token_id, collection) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	err = exec(db, insertTx, toInsert.Timestamp, toInsert.BlockNumber, toInsert.TxHash, toInsert.Tag, strings.ToLower(toInsert.FromAddr.Hex()), strings.ToLower(toInsert.ToAddr.Hex()), toInsert.Value, toInsert.TokenId, strings.ToLower(toInsert.Collection.Hex()))
-	if err != nil {
+	if err != nil && !config.IGNORE_ERR {
 		log.Println("Error :", err)
 	}
 	return err
@@ -71,7 +71,7 @@ func UpdateOwner(db *sql.DB, toUpdate customTypes.ERC721TxStruct) (err error) {
 	// Update owner
 	updateOwner := `UPDATE ERC721 SET owner = $1 WHERE token_id = $2 AND collection = $3`
 	err = exec(db, updateOwner, strings.ToLower(toUpdate.ToAddr.Hex()), toUpdate.TokenId, strings.ToLower(toUpdate.Collection.Hex()))
-	if err != nil {
+	if err != nil && !config.IGNORE_ERR {
 		log.Println("Error :", err)
 	}
 	return err
@@ -82,7 +82,7 @@ func InsertMint(db *sql.DB, toInsert customTypes.ERC721Struct) (err error) {
 	// Insert a mint
 	insertMint := `INSERT INTO ERC721(mint_timestamp, mint_block_number, mint_hash, uri, token_id, collection, owner) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 	err = exec(db, insertMint, toInsert.MintTimestamp, toInsert.MintBlockNumber, toInsert.MintTxHash, toInsert.URI, toInsert.TokenId, strings.ToLower(toInsert.Collection.Hex()), strings.ToLower(toInsert.Owner.Hex()))
-	if err != nil {
+	if err != nil && !config.IGNORE_ERR {
 		log.Println("Error :", err)
 	}
 	return err

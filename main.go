@@ -230,14 +230,14 @@ func main() {
 	}
 
 	// tx 0x6e8f8ee72ef5d07c91d78876e916be3b017c6f28358dd0543336019f75f9024f
-	// for i := 450; i < 600; i++ {
+	// for i := 500; i < 600; i++ {
 	// 	bi := big.NewInt(int64(i))
 	// 	block, _ := client.BlockByNumber(context.Background(), bi)
 	// 	blockAnalizer(block, client, db)
 	// }
-	// tx, _, _ := client.TransactionByHash(context.Background(), common.HexToHash("0xede8f5012c5115534103b9ed25cc1cdfaeb41e661a7a4813a4e6e721922b616d"))
-	// block, _ := client.BlockByNumber(context.Background(), big.NewInt(4228))
-	// eventChecker(tx, block, client, db)
+	// // tx, _, _ := client.TransactionByHash(context.Background(), common.HexToHash("0xede8f5012c5115534103b9ed25cc1cdfaeb41e661a7a4813a4e6e721922b616d"))
+	// // block, _ := client.BlockByNumber(context.Background(), big.NewInt(4228))
+	// // eventChecker(tx, block, client, db)
 
 	// log.Fatal("Done")
 
