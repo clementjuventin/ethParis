@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 )
@@ -44,6 +45,13 @@ type ERC721Struct struct {
 
 func main() {
 	router := gin.Default()
+
+	config := cors.DefaultConfig()
+	config.AllowOrigins = []string{"http://localhost:3000"}                             // Replace with your React app's URL
+	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"} // Add other headers if needed
+	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}           // Add other methods your API supports
+	router.Use(cors.New(config))
+
 	router.POST("/nft/history/:collection/:tokenId", getNftHistory)
 	router.POST("/nft/:collection/:tokenId", getNftData)
 
