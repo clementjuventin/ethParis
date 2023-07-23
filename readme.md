@@ -29,6 +29,8 @@ This will start the indexer that will directly start syncing.
 
 For the api you will need run `go run .` in the `/api` folder.
 
+You have the postman collection for the REST API endpoints.
+
 ## Authors
 
 Clément Juventin

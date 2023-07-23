@@ -1,7 +1,2 @@
-explorer/node_modules/*
-explorer/yarn.lock
-explorer/.env
+front/node_modules/*
 
-database/.env
-database/node_modules/*
-database/yarn.lock
