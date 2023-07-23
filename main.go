@@ -37,7 +37,6 @@ func detectERC721Deployment(tx *types.Transaction, client *ethclient.Client) (co
 	}
 	isERC721, err := contract.SupportsInterface(nil, [4]byte{0x80, 0xac, 0x58, 0xcd})
 	if err == nil && isERC721 {
-		log.Println("ERC721 contract found !", contractAddress.Hex())
 		return contractAddress, nil
 	}
 	return common.Address{}, err
@@ -70,17 +69,6 @@ func eventChecker(tx *types.Transaction, block *types.Block, client *ethclient.C
 			} else if vLog.Topics[2+offset].Hex()[26:] == common.HexToAddress("0x0").Hex()[2:] {
 				txTag = "burn"
 			}
-
-			log.Println("For tx :", tx.Hash().Hex())
-			log.Println("Tag :", txTag)
-			log.Println("From :", common.HexToAddress(vLog.Topics[1+offset].Hex()[26:]).Hex())
-			log.Println("To :", common.HexToAddress(vLog.Topics[2+offset].Hex()[26:]).Hex())
-			log.Println("Value :", tx.Value().String())
-			log.Println("TokenId :", vLog.Topics[3+offset].Big().String())
-			log.Println("Collection :", vLog.Address.Hex())
-
-			log.Println("logs :", vLog.Topics)
-			log.Println("---------------------")
 
 			tokenId := vLog.Topics[3+offset].Big()
 
@@ -208,7 +196,7 @@ func syncDatabase(client *ethclient.Client, db *sql.DB) {
 			query(client, i, db)
 		}(i)
 
-		if i%100 == 0 {
+		if i%1000 == 0 {
 			wg.Wait()
 			log.Println("Synced up to block", i)
 			err := database.UpdateBlock(db, i)

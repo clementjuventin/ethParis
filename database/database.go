@@ -10,43 +10,6 @@ import (
 	"workspace/database/dto"
 )
 
-// Log the whole db
-func readDatabase(db *sql.DB) {
-	// Query all the collections
-	rows, err := db.Query("SELECT contract_address FROM ERC721Collection")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	log.Println("Collections found :")
-	for rows.Next() {
-		var address string
-		err = rows.Scan(&address)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Println("|", address)
-	}
-
-	// Query all the tx
-	rows, err = db.Query("SELECT hash FROM ERC721Tx")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	log.Println("Tx found :")
-	for rows.Next() {
-		var hash string
-		err = rows.Scan(&hash)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Println("|", hash)
-	}
-}
-
 // ///////////////////////////////////// QUERIES ///////////////////////////////////////
 // Insert a collection
 func InserCollection(db *sql.DB, toInsert customTypes.ERC721CollectionStruct) (err error) {
@@ -88,14 +51,12 @@ func SelectBlock(db *sql.DB) (block uint64, err error) {
 // Update the last block
 func UpdateBlock(db *sql.DB, block uint64) (err error) {
 	update := `UPDATE State SET block = $1`
-	log.Println("Updating block to", block)
 	err = exec(db, update, block)
 	return err
 }
 
 // Insert a tx
 func InsertTx(db *sql.DB, toInsert customTypes.ERC721TxStruct) (err error) {
-	log.Println("Args :", toInsert)
 	// Insert a tx
 	insertTx := `INSERT INTO ERC721Tx(timestamp, block_number, hash, tag, from_addr, to_addr, value, token_id, collection) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 	err = exec(db, insertTx, toInsert.Timestamp, toInsert.BlockNumber, toInsert.TxHash, toInsert.Tag, strings.ToLower(toInsert.FromAddr.Hex()), strings.ToLower(toInsert.ToAddr.Hex()), toInsert.Value, toInsert.TokenId, strings.ToLower(toInsert.Collection.Hex()))
