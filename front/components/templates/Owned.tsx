@@ -8,11 +8,9 @@ import { useRequest } from "../../hooks/useRequest";
 
 const Component: React.FC = () => {
   const [allTokens, setAllTokens] = useState<Array<any>>([]);
-  const store = useContext(NftContractContext);
   const [address, setAddress] = useState<string>(
-    "0xd05eff7e1e77c1297d16d3ce37940900985f31e0"
+    "0x8fdd8db198b292d233fb5dc191e31bebc41e1144"
   );
-
   const { getAddressNft } = useRequest();
 
   async function fetchNft() {
@@ -20,15 +18,14 @@ const Component: React.FC = () => {
       ((await getAddressNft(address)) as any).map((item: any) => {
         return {
           owner: item.Owner,
-          metadata: {},
+          metadata: {
+            name: item.metadata?.name ?? "",
+            image: item.metadata?.image ?? "",
+          },
         };
       })
     );
   }
-
-  useEffect(() => {
-    fetchNft();
-  }, []);
 
   return (
     <Fade>

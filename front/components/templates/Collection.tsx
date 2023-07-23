@@ -21,6 +21,8 @@ import { Fade } from "../elements/Fade";
 import { NftListItem } from "../elements/NftListItem";
 import { NoListItems } from "../elements/NoListItems";
 import { useRequest } from "../../hooks/useRequest";
+import { set } from "lodash";
+import { Loading } from "../elements/Loading";
 
 const cropInTheMiddle = (str: string, head: number, tail: number) => {
   if (str.length <= head + tail) {
@@ -36,41 +38,29 @@ const Component: React.FC = () => {
   const [address, setAddress] = useState<string>(
     "0x33084a2a5e90622033caac1fe1aa0ed2de41cf4b"
   );
+  const [loading, setLoading] = useState<boolean>(false);
   const [history, setHistory] = useState<Array<any>>([]);
   const { getCollectionNft, getCollectionHistory } = useRequest();
 
   async function fetchNft() {
+    setLoading(true);
     setAllTokens(
       ((await getCollectionNft(address)) as any).map((item: any) => {
         return {
           owner: item.Owner,
-          metadata: {},
+          metadata: {
+            name: item.metadata?.name ?? "",
+            image: item.metadata?.image ?? "",
+          },
         };
       })
     );
+    setLoading(false);
   }
 
   async function fetchHistory() {
     setHistory(await getCollectionHistory(address));
   }
-
-  //   BlockNumber: 1070
-  // ​​
-  // Collection: "0x33084a2a5e90622033caac1fe1aa0ed2de41cf4b"
-  // ​​
-  // FromAddr: "0x0000000000000000000000000000000000000000"
-  // ​​
-  // Tag: "mint"
-  // ​​
-  // Timestamp: 1689403193
-  // ​​
-  // ToAddr: "0xda4c3eb39707ad82ea7a31afd42bdf850fed8f41"
-  // ​​
-  // TokenId: "100577224927929524126973266846132076379577580824047072502316228387356959610999"
-  // ​​
-  // TxHash: "0xf1599c2da8dca24b17ae2c5eac84af1443f0d9b75dbec567d98992eaecc8bfaf"
-  // ​​
-  // Value: "2710500000000000"
 
   useEffect(() => {
     fetchNft();
@@ -106,26 +96,33 @@ const Component: React.FC = () => {
             Search
           </Button>
         </Flex>
-        <SimpleGrid
-          columns={{
-            base: 2,
-            md: 3,
-            lg: 4,
-            xl: 5,
-            "2xl": 6,
-          }}
-          spacing={{ base: 3, xl: 6 }}
-          py={6}
-        >
-          {allTokens.map((token, index) => {
-            return (
-              <React.Fragment key={index}>
-                <NftListItem token={token} />
-              </React.Fragment>
-            );
-          })}
-          {allTokens.length == 0 && <NoListItems />}
-        </SimpleGrid>
+        {loading && (
+          <Flex marginY={"1.5rem"}>
+            <Loading />
+          </Flex>
+        )}
+        {!loading && (
+          <SimpleGrid
+            columns={{
+              base: 2,
+              md: 3,
+              lg: 4,
+              xl: 5,
+              "2xl": 6,
+            }}
+            spacing={{ base: 3, xl: 6 }}
+            py={6}
+          >
+            {allTokens.map((token, index) => {
+              return (
+                <React.Fragment key={index}>
+                  <NftListItem token={token} />
+                </React.Fragment>
+              );
+            })}
+            {allTokens.length == 0 && <NoListItems />}
+          </SimpleGrid>
+        )}
         <TableContainer
           sx={{
             borderRadius: "1rem",
@@ -178,9 +175,7 @@ const Component: React.FC = () => {
                         {cropInTheMiddle(item.ToAddr, 8, 8)}
                       </Link>
                     </Td>
-                    <Td>
-                      {Number(item.Value) / 10 ** 18}{" "}ETH
-                    </Td>
+                    <Td>{Number(item.Value) / 10 ** 18} ETH</Td>
                   </Tr>
                 );
               })}
